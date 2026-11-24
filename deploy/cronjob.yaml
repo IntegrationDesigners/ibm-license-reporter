@@ -1,0 +1,108 @@
+# IBM License Service – automated report downloader CronJob
+#
+# Runs monthly (1st of every month at 02:00 UTC) and on-demand.
+# Downloads the audit snapshot from the IBM License Service REST API and
+# archives it to S3 for compliance / audit purposes.
+#
+# Pre-requisites:
+#   1. secrets.yaml applied   → ibm-license-reporter-s3
+#   2. rbac.yaml applied      → ServiceAccount + Role + RoleBinding
+#   3. Container image built  → see Dockerfile + download-report.sh
+#
+# Frequency: monthly (adjust schedule as needed – quarterly minimum for audit)
+# Recommended S3 retention policy: >= 13 months / ≥ 5 years for audit archives
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ibm-license-reporter
+  namespace: ibm-licensing
+  labels:
+    app.kubernetes.io/name: ibm-license-reporter
+    app.kubernetes.io/component: compliance
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  # ── Schedule ────────────────────────────────────────────────────────────
+  # Monthly: 1st of every month at 02:00 UTC
+  # Change to "0 2 1 */3 *" for quarterly.
+  schedule: "0 2 1 * *"
+  # Keep the last 3 successful and 1 failed job for troubleshooting
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  # Never run overlapping jobs
+  concurrencyPolicy: Forbid
+  # If a job is missed (e.g. cluster was down) run it as soon as possible
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      # Retry at most once on failure before marking the job as failed
+      backoffLimit: 1
+      # Kill the job if it runs longer than 30 minutes
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ibm-license-reporter
+        spec:
+          serviceAccountName: license-reporter
+          restartPolicy: OnFailure
+          # ── Security context (OpenShift restricted SCC) ───────────────────
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          # ── Volumes ───────────────────────────────────────────────────────────
+          volumes:
+            - name: tmp
+              emptyDir: {}
+            # Uncomment for STORAGE_BACKEND=local — bind a PVC for persistent storage.
+            # Create the PVC separately before applying this CronJob.
+            # - name: reports
+            #   persistentVolumeClaim:
+            #     claimName: ibm-license-reports-pvc
+          containers:
+            - name: reporter
+              # Update with your registry after pushing the image:
+              # image: <your-registry>/ibm-license-reporter:latest
+              image: ibm-license-reporter:latest
+              imagePullPolicy: Always
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                # Uncomment for STORAGE_BACKEND=local:
+                # - name: reports
+                #   mountPath: /reports
+              env:
+                # ── License Service endpoint ──────────────────────────────
+                # LICENSE_SERVICE_URL is NOT set here — the script builds it
+                # automatically from the Kubernetes Service env vars injected
+                # by the cluster (IBM_LICENSING_SERVICE_INSTANCE_SERVICE_HOST etc.).
+                # Uncomment and override only if the auto-detection fails:
+                # - name: LICENSE_SERVICE_URL
+                #   value: "https://<service-name>.<namespace>.svc:<port>"
+                # ── Token (operator-managed Secret — auto-rotated) ────────
+                - name: LICENSE_SERVICE_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: ibm-licensing-token
+                      key: token
+              # ── S3 credentials (from ibm-license-reporter-s3 Secret) ────
+              # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION,
+              # S3_BUCKET, and S3_PREFIX are all injected from the Secret.
+              # When using IRSA, remove the Secret and rely on the pod's OIDC token.
+              envFrom:
+                - secretRef:
+                    name: ibm-license-reporter-s3
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi

@@ -1,0 +1,41 @@
+# IBM License Service – report downloader RBAC
+#
+# Grants the CronJob's ServiceAccount read access to the License Service token Secret.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: license-reporter
+  namespace: ibm-licensing
+  # ── ROSA IRSA annotation ─────────────────────────────────────────────────
+  # Uncomment and fill in the IAM Role ARN to use IAM Roles for Service Accounts
+  # instead of static AWS credentials in the Secret.
+  # annotations:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::<ACCOUNT_ID>:role/LicenseReporterS3Role
+  # ─────────────────────────────────────────────────────────────────────────
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: license-reporter
+  namespace: ibm-licensing
+rules:
+  # Allow the job to read the operator-managed License Service token secret
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["ibm-licensing-token"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: license-reporter
+  namespace: ibm-licensing
+subjects:
+  - kind: ServiceAccount
+    name: license-reporter
+    namespace: ibm-licensing
+roleRef:
+  kind: Role
+  name: license-reporter
+  apiGroup: rbac.authorization.k8s.io

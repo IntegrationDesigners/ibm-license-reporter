@@ -1,0 +1,7 @@
+deploy/secrets.yaml
+/tmp/license-report-*.zip
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
