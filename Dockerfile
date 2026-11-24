@@ -1,8 +1,8 @@
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
 
 # Install curl and AWS CLI v2 in a single layer
-RUN dnf install -y --nodocs --allowerasing \
-      curl \
+# curl-minimal is pre-installed in amazonlinux:2023-minimal — no need to install curl
+RUN dnf install -y --nodocs \
       unzip \
       ca-certificates \
     && curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip \
