@@ -47,25 +47,24 @@ spec:
           serviceAccountName: license-reporter
           restartPolicy: OnFailure
           # ── Security context (OpenShift restricted SCC) ───────────────────
+          # runAsUser is intentionally omitted — OpenShift assigns a UID
+          # automatically from the namespace's allowed range.
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1001
             seccompProfile:
               type: RuntimeDefault
           # ── Volumes ───────────────────────────────────────────────────────────
           volumes:
             - name: tmp
               emptyDir: {}
-            # Uncomment for STORAGE_BACKEND=local — bind a PVC for persistent storage.
+            # Used by STORAGE_BACKEND=local — bind a PVC for persistent storage.
             # Create the PVC separately before applying this CronJob.
-            # - name: reports
-            #   persistentVolumeClaim:
-            #     claimName: ibm-license-reports-pvc
+            - name: reports
+              persistentVolumeClaim:
+                claimName: ibm-license-reports-pvc
           containers:
             - name: reporter
-              # Update with your registry after pushing the image:
-              # image: <your-registry>/ibm-license-reporter:latest
-              image: ibm-license-reporter:latest
+              image: ghcr.io/integrationdesigners/ibm-license-reporter:latest
               imagePullPolicy: Always
               securityContext:
                 allowPrivilegeEscalation: false
@@ -75,9 +74,8 @@ spec:
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
-                # Uncomment for STORAGE_BACKEND=local:
-                # - name: reports
-                #   mountPath: /reports
+                - name: reports
+                  mountPath: /reports
               env:
                 # ── License Service endpoint ──────────────────────────────
                 # LICENSE_SERVICE_URL is NOT set here — the script builds it
